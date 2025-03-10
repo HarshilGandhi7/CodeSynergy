@@ -18,6 +18,8 @@ const EditorPage = () => {
   const peerConnectionRef = useRef(null);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(new MediaStream());
+  const [isVideoOn, setIsVideoOn] = useState(true);
+  const [isAudioOn, setIsAudioOn] = useState(true);
 
   useEffect(() => {
     socketRef.current = io(import.meta.env.VITE_BACKEND_URL);
@@ -141,6 +143,26 @@ const EditorPage = () => {
     });
   }, [socketRef.current]);
 
+  // Toggle video
+  const toggleVideo = () => {
+    if (localStream) {
+      localStream
+        .getVideoTracks()
+        .forEach((track) => (track.enabled = !isVideoOn));
+      setIsVideoOn(!isVideoOn);
+    }
+  };
+
+  // Toggle audio
+  const toggleAudio = () => {
+    if (localStream) {
+      localStream
+        .getAudioTracks()
+        .forEach((track) => (track.enabled = !isAudioOn));
+      setIsAudioOn(!isAudioOn);
+    }
+  };
+
   // Copy room ID to clipboard
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
@@ -203,23 +225,175 @@ const EditorPage = () => {
         {/* Main Panel */}
         <div className="w-3/4 flex flex-col p-6 overflow-y-auto h-[calc(100vh-64px)]">
           {/* Video Section */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-gray-800 p-4 rounded-lg shadow-md flex flex-col items-center">
-              <h3 className="text-lg font-semibold mb-2">Your Video</h3>
-              <video
-                ref={localVideoRef}
-                autoPlay
-                muted
-                className="w-full h-52 rounded-lg object-contain bg-gray-900"
-              ></video>
+          <div className="grid grid-cols-2 gap-6 mb-8">
+            {/* Local Video */}
+            <div className="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
+              <div className="bg-gray-700 px-4 py-2 flex justify-between items-center">
+                <h3 className="font-medium text-gray-200">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                  {userName} (You)
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    className={`p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-gray-800 ${
+                      isAudioOn
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "bg-red-500 hover:bg-red-600"
+                    }`}
+                    onClick={toggleAudio}
+                    title={isAudioOn ? "Mute Audio" : "Unmute Audio"}
+                  >
+                    <span className="sr-only">
+                      {isAudioOn ? "Mute Audio" : "Unmute Audio"}
+                    </span>
+                    {isAudioOn ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4 text-white"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4 text-white"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    className={`p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-gray-800 ${
+                      isVideoOn
+                        ? "bg-blue-500 hover:bg-blue-600"
+                        : "bg-red-500 hover:bg-red-600"
+                    }`}
+                    onClick={toggleVideo}
+                    title={isVideoOn ? "Turn Off Video" : "Turn On Video"}
+                  >
+                    <span className="sr-only">
+                      {isVideoOn ? "Turn Off Video" : "Turn On Video"}
+                    </span>
+                    {isVideoOn ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4 text-white"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                        <path d="M14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4 text-white"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+              <div className="relative">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  muted
+                  className="w-full h-60 object-contain bg-gray-900"
+                ></video>
+                {!isVideoOn && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-16 w-16 text-gray-600 mb-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                      />
+                    </svg>
+                    <p className="text-gray-400 font-medium">
+                      Video is turned off
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="bg-gray-800 p-4 rounded-lg shadow-md flex flex-col items-center">
-              <h3 className="text-lg font-semibold mb-2">Remote Video</h3>
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                className="w-full h-52 rounded-lg object-contain bg-gray-900"
-              ></video>
+
+            {/* Remote Video */}
+            <div className="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
+              <div className="bg-gray-700 px-4 py-2 flex justify-between items-center">
+                <h3 className="font-medium text-gray-200">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                  {clients.find((client) => client.username !== userName)
+                    ?.username || "Waiting for user..."}
+                </h3>
+                <span className="text-xs text-gray-400 px-2 py-0.5 bg-gray-800 rounded-full">
+                  {clients.length > 1 ? "Connected" : "Waiting..."}
+                </span>
+              </div>
+              <div className="relative">
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  className="w-full h-60 object-contain bg-gray-900"
+                ></video>
+                {clients.length <= 1 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-16 w-16 text-gray-600 mb-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                      />
+                    </svg>
+                    <p className="text-gray-400 font-medium">
+                      Waiting for someone to join...
+                    </p>
+                  </div>
+                )}
+                {clients.length > 1 && (
+                  <div className="absolute bottom-2 right-2">
+                    <div className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-xs text-gray-300">
+                      {
+                        clients.find((client) => client.username !== userName)
+                          ?.username
+                      }
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
