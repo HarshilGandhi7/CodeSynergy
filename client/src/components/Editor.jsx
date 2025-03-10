@@ -9,7 +9,7 @@ const Editor = ({ code, setCode, socketRef, roomId }) => {
   const [debouncedCode, setDebouncedCode] = useState(code);
   const [iframeKey, setIframeKey] = useState(0);
   const editorRef = useRef(null);
-  const isUpdatingFromSockenew t = useRef(false);
+  const isUpdatingFromSocket = useRef(false);
 
   // Handle Local Code Change
   const handleCodeChange = useCallback(
