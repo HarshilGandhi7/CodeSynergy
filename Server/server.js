@@ -82,7 +82,25 @@ io.on("connection", (socket) => {
         userNames.delete(socket.id);
       }
     }
+  }); 
+
+  // Handle WebRTC Signaling for Video Calls
+  socket.on(ACTIONS.OFFER, ({ offer, roomId }) => {
+    console.log(`Received offer in room ${roomId}`);
+    socket.to(roomId).emit(ACTIONS.OFFER, { offer });
   });
+
+  socket.on(ACTIONS.ANSWER, ({ answer, roomId }) => {
+    console.log(`Received answer in room ${roomId}`);
+    socket.to(roomId).emit(ACTIONS.ANSWER, { answer });
+  });
+
+  socket.on(ACTIONS.ICE_CANDIDATE, ({ candidate, roomId }) => {
+    console.log(`Received ICE Candidate in room ${roomId}`);
+    socket.to(roomId).emit(ACTIONS.ICE_CANDIDATE, { candidate });
+  });
+
+
 
   socket.on("disconnect", () => {
     console.log(` Socket disconnected: ${socket.id}`);

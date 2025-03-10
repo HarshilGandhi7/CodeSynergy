@@ -5,6 +5,10 @@ const ACTIONS = {
     CODE_CHANGE: 'code-change',
     SYNC_CODE: 'sync-code',
     LEAVE: 'leave',
+
+    OFFER: 'offer',            
+    ANSWER: 'answer',         
+    ICE_CANDIDATE: 'ice-candidate',
 };
 
 module.exports = ACTIONS;  
