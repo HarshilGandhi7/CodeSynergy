@@ -51,6 +51,26 @@ const EditorPage = () => {
     );
 
     return () => {
+      // Stop all media tracks
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+      }
+
+      // Clear video elements
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+
+      // Close peer connection
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      // Disconnect socket
       if (socketRef.current) {
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
@@ -89,10 +109,12 @@ const EditorPage = () => {
 
       // Handle the ontrack event, to receive remote stream
       peerConnectionRef.current.ontrack = (event) => {
-        event.streams[0].getTracks().forEach((track) => {
-          remoteStream.addTrack(track);
-        });
-        remoteVideoRef.current.srcObject = remoteStream;
+        console.log("Remote track received:", event.track.kind);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+          setRemoteStream(event.streams[0]);
+          console.log("Remote video stream connected successfully");
+        }
       };
 
       // Send ICE Candidates to the other peer
@@ -171,9 +193,27 @@ const EditorPage = () => {
 
   // Leave the room and navigate back
   const leaveRoom = () => {
+    // Stop all tracks in the local stream
+    if (localStream) {
+      localStream.getTracks().forEach((track) => track.stop());
+    }
+
+    // Clear remote video element
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+
+    // Close and cleanup peer connection
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+
+    // Disconnect socket
     if (socketRef.current) {
       socketRef.current.disconnect();
     }
+
     window.location.href = "/";
   };
 
@@ -229,10 +269,13 @@ const EditorPage = () => {
             {/* Local Video */}
             <div className="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
               <div className="bg-gray-700 px-4 py-2 flex justify-between items-center">
-                <h3 className="font-medium text-gray-200">
-                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-                  {userName} (You)
-                </h3>
+                <div className="flex items-center">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+                  <h3 className="font-medium text-gray-200">
+                    {userName}{" "}
+                    <span className="text-xs text-gray-400">(You)</span>
+                  </h3>
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     className={`p-1.5 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-gray-800 ${
@@ -318,27 +361,30 @@ const EditorPage = () => {
                   ref={localVideoRef}
                   autoPlay
                   muted
+                  playsInline
                   className="w-full h-60 object-contain bg-gray-900"
                 ></video>
                 {!isVideoOn && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-16 w-16 text-gray-600 mb-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-                      />
-                    </svg>
-                    <p className="text-gray-400 font-medium">
-                      Video is turned off
-                    </p>
+                    <div className="flex flex-col items-center justify-center p-4 bg-gray-800 bg-opacity-75 rounded-lg">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-12 w-12 text-gray-500 mb-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                        />
+                      </svg>
+                      <p className="text-gray-300 font-medium text-sm">
+                        Camera Off
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -347,52 +393,92 @@ const EditorPage = () => {
             {/* Remote Video */}
             <div className="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
               <div className="bg-gray-700 px-4 py-2 flex justify-between items-center">
-                <h3 className="font-medium text-gray-200">
-                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-                  {clients.find((client) => client.username !== userName)
-                    ?.username || "Waiting for user..."}
-                </h3>
-                <span className="text-xs text-gray-400 px-2 py-0.5 bg-gray-800 rounded-full">
-                  {clients.length > 1 ? "Connected" : "Waiting..."}
-                </span>
+                <div className="flex items-center">
+                  {clients.length > 1 ? (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+                      <h3 className="font-medium text-gray-200">
+                        {clients.find((client) => client.username !== userName)
+                          ?.username || "Remote User"}
+                      </h3>
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-gray-500 mr-2"></span>
+                      <h3 className="font-medium text-gray-400">
+                        Waiting for connection...
+                      </h3>
+                    </>
+                  )}
+                </div>
+                {clients.length > 1 && (
+                  <span className="px-2 py-0.5 bg-green-500 bg-opacity-20 text-green-400 text-xs rounded-full border border-green-500">
+                    Connected
+                  </span>
+                )}
               </div>
               <div className="relative">
                 <video
                   ref={remoteVideoRef}
                   autoPlay
+                  playsInline
                   className="w-full h-60 object-contain bg-gray-900"
                 ></video>
+
                 {clients.length <= 1 && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-16 w-16 text-gray-600 mb-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                      />
-                    </svg>
-                    <p className="text-gray-400 font-medium">
-                      Waiting for someone to join...
-                    </p>
-                  </div>
-                )}
-                {clients.length > 1 && (
-                  <div className="absolute bottom-2 right-2">
-                    <div className="bg-gray-800 bg-opacity-75 px-2 py-1 rounded text-xs text-gray-300">
-                      {
-                        clients.find((client) => client.username !== userName)
-                          ?.username
-                      }
+                    <div className="bg-gray-800 bg-opacity-75 p-4 rounded-lg flex flex-col items-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-12 w-12 text-gray-500 mb-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      <p className="text-gray-400 text-sm font-medium">
+                        Invite someone to join
+                      </p>
+                      <button
+                        onClick={copyRoomId}
+                        className="mt-3 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition flex items-center"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-4 w-4 mr-1"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                          />
+                        </svg>
+                        Copy Room ID
+                      </button>
                     </div>
                   </div>
                 )}
+
+                {clients.length > 1 &&
+                  remoteVideoRef.current &&
+                  !remoteVideoRef.current.srcObject && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-90">
+                      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-2"></div>
+                      <p className="text-gray-300 text-sm font-medium">
+                        Connecting video...
+                      </p>
+                    </div>
+                  )}
               </div>
             </div>
           </div>
