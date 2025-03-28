@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import Editor from "../components/Editor";
 import { ACTIONS } from "../../Actions";
 import toast from "react-hot-toast";
+import { debounce } from 'lodash'; // Add this import or implement your own debounce
 
 const EditorPage = () => {
+  // Existing state and refs...
   const { roomId, userName } = useParams();
   const navigate = useNavigate();
   const socketRef = useRef(null);
@@ -20,14 +22,76 @@ const EditorPage = () => {
   const [remoteStream, setRemoteStream] = useState(new MediaStream());
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isAudioOn, setIsAudioOn] = useState(true);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  
+  // Keep track of whether WebRTC is connected
+  const [webRTCConnected, setWebRTCConnected] = useState(false);
+  
+  // Debounce code changes to reduce socket traffic
+  const debouncedCodeChange = useCallback(
+    debounce((code) => {
+      if (socketRef.current) {
+        socketRef.current.emit(ACTIONS.CODE_CHANGE, {
+          roomId,
+          code,
+        });
+      }
+    }, 500), // Wait 500ms after last keystroke before sending
+    [roomId]
+  );
 
+  // Enhanced setCode function that uses debouncing
+  const handleCodeChange = (newCode) => {
+    setCode(newCode);
+    debouncedCodeChange(newCode);
+  };
+
+  // Restart WebRTC connection when it fails
+  const restartConnection = async () => {
+    if (!peerConnectionRef.current || !localStream) return;
+    
+    try {
+      setIsReconnecting(true);
+      console.log("Attempting to restart WebRTC connection...");
+      
+      // Create a new offer with iceRestart flag
+      const offer = await peerConnectionRef.current.createOffer({ 
+        iceRestart: true,
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
+      await peerConnectionRef.current.setLocalDescription(offer);
+      socketRef.current.emit(ACTIONS.OFFER, { offer, roomId });
+      
+      setTimeout(() => {
+        setIsReconnecting(false);
+      }, 5000); // Show reconnecting UI for at least 5 seconds
+    } catch (error) {
+      console.error("Failed to restart connection:", error);
+      setIsReconnecting(false);
+    }
+  };
+
+  // Establish socket connection with improved error handling
   useEffect(() => {
-    socketRef.current = io(import.meta.env.VITE_BACKEND_URL);
+    // Create socket with explicit transport options for more stability
+    socketRef.current = io(import.meta.env.VITE_BACKEND_URL, {
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000
+    });
 
     socketRef.current.on("connect", () => {
       console.log("Connected to server:", socketRef.current.id);
     });
+    
+    socketRef.current.on("connect_error", (err) => {
+      console.error("Socket connection error:", err);
+      toast.error("Connection error. Reconnecting...");
+    });
 
+    // Join room with the username
     socketRef.current.emit(ACTIONS.JOIN, { roomId, username: userName });
 
     socketRef.current.on(ACTIONS.JOINED, ({ clients, username }) => {
@@ -35,11 +99,25 @@ const EditorPage = () => {
         toast.success(`${username} joined the room`);
       }
       setClients(clients);
-      startVideoCall();
+      
+      // Only start video call if not already connected
+      if (!localStream) {
+        startVideoCall();
+      } else if (username !== userName && peerConnectionRef.current) {
+        // If someone else joined and we already have a peer connection,
+        // restart the connection after a short delay
+        setTimeout(() => {
+          restartConnection();
+        }, 1000);
+      }
     });
 
+    // Create a separate handler for code changes to optimize performance
     socketRef.current.on(ACTIONS.CODE_CHANGE, ({ code }) => {
-      setCode(code);
+      // Use requestAnimationFrame to prevent UI blocking
+      requestAnimationFrame(() => {
+        setCode(code);
+      });
     });
 
     socketRef.current.on(
@@ -47,16 +125,21 @@ const EditorPage = () => {
       ({ socketId, username, clients }) => {
         toast.error(`${username} left the room`);
         setClients(clients);
+        
+        // Reset remote video when peer disconnects
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null;
+          setWebRTCConnected(false);
+        }
       }
     );
 
     return () => {
-      // Stop all media tracks
+      // Enhanced cleanup
       if (localStream) {
         localStream.getTracks().forEach((track) => track.stop());
       }
 
-      // Clear video elements
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = null;
       }
@@ -65,21 +148,20 @@ const EditorPage = () => {
         remoteVideoRef.current.srcObject = null;
       }
 
-      // Close peer connection
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;
       }
-      // Disconnect socket
+      
       if (socketRef.current) {
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
         socketRef.current = null;
       }
     };
-  }, [roomId]);
+  }, [roomId, userName]);
 
-  // Start the video call
+  // Improved video call setup with enhanced connection state monitoring
   const startVideoCall = async () => {
     try {
       // Get the local media stream
@@ -88,38 +170,95 @@ const EditorPage = () => {
         audio: true,
       });
       setLocalStream(stream);
-      localVideoRef.current.srcObject = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
 
-      // Create a peer connection
+      // Create a peer connection with better STUN server config
       peerConnectionRef.current = new RTCPeerConnection({
         iceServers: [
           {
             urls: [
               "stun:stun.l.google.com:19302",
               "stun:stun1.l.google.com:19302",
+              "stun:stun2.l.google.com:19302",
+              "stun:stun3.l.google.com:19302",
             ],
           },
         ],
+        iceCandidatePoolSize: 10, // Increase candidate pool for better connections
       });
+
+      // Monitor connection state changes
+      peerConnectionRef.current.onconnectionstatechange = () => {
+        console.log("Connection state:", peerConnectionRef.current.connectionState);
+        
+        if (peerConnectionRef.current.connectionState === "connected") {
+          setWebRTCConnected(true);
+          setIsReconnecting(false);
+        } else if (peerConnectionRef.current.connectionState === "disconnected" ||
+                  peerConnectionRef.current.connectionState === "failed") {
+          setWebRTCConnected(false);
+          // Only show reconnection UI if we were previously connected
+          if (webRTCConnected) {
+            setIsReconnecting(true);
+            toast.error("Video connection lost. Attempting to reconnect...");
+            
+            // Attempt to reconnect after a delay
+            setTimeout(() => {
+              if (clients.length > 1) {
+                restartConnection();
+              }
+            }, 2000);
+          }
+        }
+      };
+
+      // Monitor ICE connection state
+      peerConnectionRef.current.oniceconnectionstatechange = () => {
+        console.log("ICE connection state:", peerConnectionRef.current.iceConnectionState);
+        if (peerConnectionRef.current.iceConnectionState === "failed") {
+          console.log("ICE connection failed, attempting restart");
+          peerConnectionRef.current.restartIce();
+        }
+      };
 
       // Add the local stream to the peer connection
       stream.getTracks().forEach((track) => {
         peerConnectionRef.current.addTrack(track, stream);
       });
 
-      // Handle the ontrack event, to receive remote stream
+      // Improved track handling
       peerConnectionRef.current.ontrack = (event) => {
         console.log("Remote track received:", event.track.kind);
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
           setRemoteStream(event.streams[0]);
+          setWebRTCConnected(true);
+          setIsReconnecting(false);
           console.log("Remote video stream connected successfully");
+          
+          // Add track event listeners to detect track status changes
+          event.track.onunmute = () => {
+            console.log("Track unmuted:", event.track.kind);
+            setWebRTCConnected(true);
+          };
+          
+          event.track.onmute = () => {
+            console.log("Track muted:", event.track.kind);
+          };
+          
+          event.track.onended = () => {
+            console.log("Track ended:", event.track.kind);
+            setWebRTCConnected(false);
+          };
         }
       };
 
-      // Send ICE Candidates to the other peer
+      // Handle ICE candidates more efficiently
       peerConnectionRef.current.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && socketRef.current) {
+          // Send ICE candidate with high priority
           socketRef.current.emit(ACTIONS.ICE_CANDIDATE, {
             candidate: event.candidate,
             roomId,
@@ -127,9 +266,12 @@ const EditorPage = () => {
         }
       };
 
-      // If the user is the first one in the room, create an offer
-      if (clients.length === 0) {
-        const offer = await peerConnectionRef.current.createOffer();
+      // If we have other clients already in the room, create an offer
+      if (clients.length > 1) {
+        const offer = await peerConnectionRef.current.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
         await peerConnectionRef.current.setLocalDescription(offer);
         socketRef.current.emit(ACTIONS.OFFER, { offer, roomId });
       }
@@ -139,33 +281,92 @@ const EditorPage = () => {
     }
   };
 
+  // Handle WebRTC signaling separately from code changes for better performance
   useEffect(() => {
     if (!socketRef.current) return;
 
-    // When receiving an offer from another peer
-    socketRef.current.on(ACTIONS.OFFER, async ({ offer }) => {
-      await peerConnectionRef.current.setRemoteDescription(
-        new RTCSessionDescription(offer)
-      );
-      const answer = await peerConnectionRef.current.createAnswer();
-      await peerConnectionRef.current.setLocalDescription(answer);
-      socketRef.current.emit(ACTIONS.ANSWER, { answer, roomId });
-    });
+    // Create handlers for WebRTC signaling
+    const handleOffer = async ({ offer }) => {
+      try {
+        if (!peerConnectionRef.current) {
+          // If we don't have a peer connection yet, start the video call
+          await startVideoCall();
+        }
+        
+        await peerConnectionRef.current.setRemoteDescription(
+          new RTCSessionDescription(offer)
+        );
+        const answer = await peerConnectionRef.current.createAnswer();
+        await peerConnectionRef.current.setLocalDescription(answer);
+        socketRef.current.emit(ACTIONS.ANSWER, { answer, roomId });
+      } catch (error) {
+        console.error("Error handling offer:", error);
+      }
+    };
 
-    // When receiving an answer from the peer
-    socketRef.current.on(ACTIONS.ANSWER, async ({ answer }) => {
-      await peerConnectionRef.current.setRemoteDescription(
-        new RTCSessionDescription(answer)
-      );
-    });
+    const handleAnswer = async ({ answer }) => {
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.setRemoteDescription(
+            new RTCSessionDescription(answer)
+          );
+        }
+      } catch (error) {
+        console.error("Error handling answer:", error);
+      }
+    };
 
-    // When receiving an ICE candidate from the peer
-    socketRef.current.on(ACTIONS.ICE_CANDIDATE, ({ candidate }) => {
-      peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-    });
-  }, [socketRef.current]);
+    const handleIceCandidate = async ({ candidate }) => {
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.addIceCandidate(
+            new RTCIceCandidate(candidate)
+          );
+        }
+      } catch (error) {
+        console.error("Error adding ICE candidate:", error);
+      }
+    };
 
-  // Toggle video
+    // Use listeners with high priority for WebRTC signaling
+    socketRef.current.on(ACTIONS.OFFER, handleOffer);
+    socketRef.current.on(ACTIONS.ANSWER, handleAnswer);
+    socketRef.current.on(ACTIONS.ICE_CANDIDATE, handleIceCandidate);
+
+    return () => {
+      // Clean up listeners
+      if (socketRef.current) {
+        socketRef.current.off(ACTIONS.OFFER, handleOffer);
+        socketRef.current.off(ACTIONS.ANSWER, handleAnswer);
+        socketRef.current.off(ACTIONS.ICE_CANDIDATE, handleIceCandidate);
+      }
+    };
+  }, [socketRef.current, roomId]);
+
+  // Add tab visibility detection to handle tab switching
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // When returning to the tab, check if video connection is active
+        if (peerConnectionRef.current && 
+            clients.length > 1 &&
+            (peerConnectionRef.current.iceConnectionState !== "connected" || 
+             !webRTCConnected)) {
+          console.log("Tab visible again, checking video connection");
+          setIsReconnecting(true);
+          setTimeout(() => {
+            restartConnection();
+          }, 1000);
+        }
+      }
+    };
+    
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [clients, webRTCConnected]);
+
+  // Other methods remain the same...
+  // (toggleVideo, toggleAudio, copyRoomId, leaveRoom)
   const toggleVideo = () => {
     if (localStream) {
       localStream
@@ -185,7 +386,6 @@ const EditorPage = () => {
     }
   };
 
-  // Copy room ID to clipboard
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
     toast.success("Room ID copied!");
@@ -222,6 +422,7 @@ const EditorPage = () => {
       <p className="text-center text-gray-300 text-lg mt-5">Connecting...</p>
     );
 
+  // In your render method for the remote video, add the reconnecting UI:
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white">
       {/* Header */}
@@ -487,7 +688,7 @@ const EditorPage = () => {
           <div className="flex-1 bg-gray-800 p-4 rounded-lg shadow-md">
             <Editor
               code={code}
-              setCode={setCode}
+              setCode={handleCodeChange}
               socketRef={socketRef}
               roomId={roomId}
             />

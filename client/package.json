@@ -15,6 +15,7 @@
     "@tailwindcss/vite": "^4.0.9",
     "@uiw/react-codemirror": "^4.23.9",
     "dotenv": "^16.4.7",
+    "lodash": "^4.17.21",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hot-toast": "^2.5.2",
