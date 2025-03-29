@@ -234,6 +234,7 @@ const EditorPage = () => {
         peerConnectionRef.current.addTrack(track, stream);
       });
 
+      // Triger when a remote track is received 
       peerConnectionRef.current.ontrack = (event) => {
         console.log("Remote track received:", event.track.kind);
         if (remoteVideoRef.current) {
@@ -276,7 +277,8 @@ const EditorPage = () => {
           offerToReceiveAudio: true,
           offerToReceiveVideo: true,
         });
-        await peerConnectionRef.current.setLocalDescription(offer);
+      // Sets the Session Description Protocaol(SDP) for the local peer connection
+        await peerConnectionRef.current.setLocalDescription(offer); 
         socketRef.current.emit(ACTIONS.OFFER, { offer, roomId });
       }
     } catch (error) {
@@ -285,7 +287,7 @@ const EditorPage = () => {
     }
   };
 
-  // Handling WebRTC signaling separately from code changes for better performance
+  // Handling WebRTC signaling separately 
   useEffect(() => {
     if (!socketRef.current) return;
 
@@ -332,7 +334,6 @@ const EditorPage = () => {
       }
     };
 
-    // Use listeners with high priority for WebRTC signaling
     socketRef.current.on(ACTIONS.OFFER, handleOffer);
     socketRef.current.on(ACTIONS.ANSWER, handleAnswer);
     socketRef.current.on(ACTIONS.ICE_CANDIDATE, handleIceCandidate);
