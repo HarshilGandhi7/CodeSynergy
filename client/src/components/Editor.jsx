@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { toast } from "react-hot-toast";
 import { ACTIONS } from "../../Actions";
 
 const Editor = ({ code, setCode, socketRef, roomId }) => {

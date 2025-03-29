@@ -22,7 +22,6 @@ const rooms = new Map();
 const userNames = new Map();
 const codeStorage = new Map();
 
-
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
@@ -43,7 +42,7 @@ io.on("connection", (socket) => {
 
     const clients = [...rooms.get(roomId)].map((id) => ({
       socketId: id,
-      username: userNames.get(id),  
+      username: userNames.get(id),
     }));
 
     io.to(roomId).emit(ACTIONS.JOINED, {
@@ -66,13 +65,13 @@ io.on("connection", (socket) => {
         rooms.get(roomId).delete(socket.id);
         const clients = [...rooms.get(roomId)].map((id) => ({
           socketId: id,
-          username: userNames.get(id), 
+          username: userNames.get(id),
         }));
 
         // Notify others that a user left
         io.to(roomId).emit(ACTIONS.DISCONNECTED, {
           socketId: socket.id,
-          username: userNames.get(socket.id), 
+          username: userNames.get(socket.id),
           clients,
         });
 
@@ -83,7 +82,7 @@ io.on("connection", (socket) => {
         userNames.delete(socket.id);
       }
     }
-  }); 
+  });
 
   // Handle WebRTC Signaling for Video Calls
   socket.on(ACTIONS.OFFER, ({ offer, roomId }) => {
@@ -100,8 +99,6 @@ io.on("connection", (socket) => {
     console.log(`Received ICE Candidate in room ${roomId}`);
     socket.to(roomId).emit(ACTIONS.ICE_CANDIDATE, { candidate });
   });
-
-
 
   socket.on("disconnect", () => {
     console.log(` Socket disconnected: ${socket.id}`);

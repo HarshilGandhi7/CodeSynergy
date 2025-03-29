@@ -1,15 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import Editor from "../components/Editor";
 import { ACTIONS } from "../../Actions";
 import toast from "react-hot-toast";
-import { debounce } from 'lodash'; // Add this import or implement your own debounce
+import { debounce } from "lodash";
 
 const EditorPage = () => {
-  // Existing state and refs...
   const { roomId, userName } = useParams();
-  const navigate = useNavigate();
   const socketRef = useRef(null);
   const [clients, setClients] = useState([]);
   const [code, setCode] = useState(`console.log("Hello from JavaScript!");`);
@@ -23,11 +21,9 @@ const EditorPage = () => {
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isAudioOn, setIsAudioOn] = useState(true);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  
-  // Keep track of whether WebRTC is connected
   const [webRTCConnected, setWebRTCConnected] = useState(false);
-  
-  // Debounce code changes to reduce socket traffic
+
+  // Debouncing code changes to reduce socket traffic resolving webrtc issues of video not available
   const debouncedCodeChange = useCallback(
     debounce((code) => {
       if (socketRef.current) {
@@ -40,29 +36,29 @@ const EditorPage = () => {
     [roomId]
   );
 
-  // Enhanced setCode function that uses debouncing
+  // SetCode function with debouncing
   const handleCodeChange = (newCode) => {
     setCode(newCode);
     debouncedCodeChange(newCode);
   };
 
-  // Restart WebRTC connection when it fails
+  // Restarting WebRTC connection when it fails
   const restartConnection = async () => {
     if (!peerConnectionRef.current || !localStream) return;
-    
+
     try {
       setIsReconnecting(true);
       console.log("Attempting to restart WebRTC connection...");
-      
+
       // Create a new offer with iceRestart flag
-      const offer = await peerConnectionRef.current.createOffer({ 
+      const offer = await peerConnectionRef.current.createOffer({
         iceRestart: true,
         offerToReceiveAudio: true,
-        offerToReceiveVideo: true
+        offerToReceiveVideo: true,
       });
       await peerConnectionRef.current.setLocalDescription(offer);
       socketRef.current.emit(ACTIONS.OFFER, { offer, roomId });
-      
+
       setTimeout(() => {
         setIsReconnecting(false);
       }, 5000); // Show reconnecting UI for at least 5 seconds
@@ -72,20 +68,20 @@ const EditorPage = () => {
     }
   };
 
-  // Establish socket connection with improved error handling
+  // Establish socket connection
   useEffect(() => {
-    // Create socket with explicit transport options for more stability
+    // Create socket
     socketRef.current = io(import.meta.env.VITE_BACKEND_URL, {
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 20000
+      timeout: 20000,
     });
 
     socketRef.current.on("connect", () => {
       console.log("Connected to server:", socketRef.current.id);
     });
-    
+
     socketRef.current.on("connect_error", (err) => {
       console.error("Socket connection error:", err);
       toast.error("Connection error. Reconnecting...");
@@ -99,7 +95,7 @@ const EditorPage = () => {
         toast.success(`${username} joined the room`);
       }
       setClients(clients);
-      
+
       // Only start video call if not already connected
       if (!localStream) {
         startVideoCall();
@@ -112,7 +108,7 @@ const EditorPage = () => {
       }
     });
 
-    // Create a separate handler for code changes to optimize performance
+    // Separate handler for code changes to optimize performance
     socketRef.current.on(ACTIONS.CODE_CHANGE, ({ code }) => {
       // Use requestAnimationFrame to prevent UI blocking
       requestAnimationFrame(() => {
@@ -125,7 +121,7 @@ const EditorPage = () => {
       ({ socketId, username, clients }) => {
         toast.error(`${username} left the room`);
         setClients(clients);
-        
+
         // Reset remote video when peer disconnects
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = null;
@@ -152,7 +148,7 @@ const EditorPage = () => {
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;
       }
-      
+
       if (socketRef.current) {
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
@@ -161,7 +157,7 @@ const EditorPage = () => {
     };
   }, [roomId, userName]);
 
-  // Improved video call setup with enhanced connection state monitoring
+  // Video call setup
   const startVideoCall = async () => {
     try {
       // Get the local media stream
@@ -169,12 +165,14 @@ const EditorPage = () => {
         video: true,
         audio: true,
       });
+
       setLocalStream(stream);
+
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
 
-      // Create a peer connection with better STUN server config
+      // Peer connection with STUN server config
       peerConnectionRef.current = new RTCPeerConnection({
         iceServers: [
           {
@@ -186,24 +184,29 @@ const EditorPage = () => {
             ],
           },
         ],
-        iceCandidatePoolSize: 10, // Increase candidate pool for better connections
+        iceCandidatePoolSize: 10, 
       });
 
       // Monitor connection state changes
       peerConnectionRef.current.onconnectionstatechange = () => {
-        console.log("Connection state:", peerConnectionRef.current.connectionState);
-        
+        console.log(
+          "Connection state:",
+          peerConnectionRef.current.connectionState
+        );
+
         if (peerConnectionRef.current.connectionState === "connected") {
           setWebRTCConnected(true);
           setIsReconnecting(false);
-        } else if (peerConnectionRef.current.connectionState === "disconnected" ||
-                  peerConnectionRef.current.connectionState === "failed") {
+        } else if (
+          peerConnectionRef.current.connectionState === "disconnected" ||
+          peerConnectionRef.current.connectionState === "failed"
+        ) {
           setWebRTCConnected(false);
           // Only show reconnection UI if we were previously connected
           if (webRTCConnected) {
             setIsReconnecting(true);
             toast.error("Video connection lost. Attempting to reconnect...");
-            
+
             // Attempt to reconnect after a delay
             setTimeout(() => {
               if (clients.length > 1) {
@@ -216,7 +219,10 @@ const EditorPage = () => {
 
       // Monitor ICE connection state
       peerConnectionRef.current.oniceconnectionstatechange = () => {
-        console.log("ICE connection state:", peerConnectionRef.current.iceConnectionState);
+        console.log(
+          "ICE connection state:",
+          peerConnectionRef.current.iceConnectionState
+        );
         if (peerConnectionRef.current.iceConnectionState === "failed") {
           console.log("ICE connection failed, attempting restart");
           peerConnectionRef.current.restartIce();
@@ -228,7 +234,6 @@ const EditorPage = () => {
         peerConnectionRef.current.addTrack(track, stream);
       });
 
-      // Improved track handling
       peerConnectionRef.current.ontrack = (event) => {
         console.log("Remote track received:", event.track.kind);
         if (remoteVideoRef.current) {
@@ -237,17 +242,17 @@ const EditorPage = () => {
           setWebRTCConnected(true);
           setIsReconnecting(false);
           console.log("Remote video stream connected successfully");
-          
+
           // Add track event listeners to detect track status changes
           event.track.onunmute = () => {
             console.log("Track unmuted:", event.track.kind);
             setWebRTCConnected(true);
           };
-          
+
           event.track.onmute = () => {
             console.log("Track muted:", event.track.kind);
           };
-          
+
           event.track.onended = () => {
             console.log("Track ended:", event.track.kind);
             setWebRTCConnected(false);
@@ -258,7 +263,6 @@ const EditorPage = () => {
       // Handle ICE candidates more efficiently
       peerConnectionRef.current.onicecandidate = (event) => {
         if (event.candidate && socketRef.current) {
-          // Send ICE candidate with high priority
           socketRef.current.emit(ACTIONS.ICE_CANDIDATE, {
             candidate: event.candidate,
             roomId,
@@ -270,7 +274,7 @@ const EditorPage = () => {
       if (clients.length > 1) {
         const offer = await peerConnectionRef.current.createOffer({
           offerToReceiveAudio: true,
-          offerToReceiveVideo: true
+          offerToReceiveVideo: true,
         });
         await peerConnectionRef.current.setLocalDescription(offer);
         socketRef.current.emit(ACTIONS.OFFER, { offer, roomId });
@@ -281,7 +285,7 @@ const EditorPage = () => {
     }
   };
 
-  // Handle WebRTC signaling separately from code changes for better performance
+  // Handling WebRTC signaling separately from code changes for better performance
   useEffect(() => {
     if (!socketRef.current) return;
 
@@ -292,7 +296,7 @@ const EditorPage = () => {
           // If we don't have a peer connection yet, start the video call
           await startVideoCall();
         }
-        
+
         await peerConnectionRef.current.setRemoteDescription(
           new RTCSessionDescription(offer)
         );
@@ -343,15 +347,17 @@ const EditorPage = () => {
     };
   }, [socketRef.current, roomId]);
 
-  // Add tab visibility detection to handle tab switching
+  // Tab visibility detection to handle tab switching
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         // When returning to the tab, check if video connection is active
-        if (peerConnectionRef.current && 
-            clients.length > 1 &&
-            (peerConnectionRef.current.iceConnectionState !== "connected" || 
-             !webRTCConnected)) {
+        if (
+          peerConnectionRef.current &&
+          clients.length > 1 &&
+          (peerConnectionRef.current.iceConnectionState !== "connected" ||
+            !webRTCConnected)
+        ) {
           console.log("Tab visible again, checking video connection");
           setIsReconnecting(true);
           setTimeout(() => {
@@ -360,13 +366,13 @@ const EditorPage = () => {
         }
       }
     };
-    
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [clients, webRTCConnected]);
 
-  // Other methods remain the same...
-  // (toggleVideo, toggleAudio, copyRoomId, leaveRoom)
+  // Toggle video
   const toggleVideo = () => {
     if (localStream) {
       localStream
@@ -386,6 +392,7 @@ const EditorPage = () => {
     }
   };
 
+  // Copy the room ID to the clipboard
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
     toast.success("Room ID copied!");
@@ -422,7 +429,6 @@ const EditorPage = () => {
       <p className="text-center text-gray-300 text-lg mt-5">Connecting...</p>
     );
 
-  // In your render method for the remote video, add the reconnecting UI:
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white">
       {/* Header */}
